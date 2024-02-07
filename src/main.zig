@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 
 pub fn main() !void {
     var arena_instance = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -20,13 +21,54 @@ pub fn main() !void {
 
     const ast = try std.zig.Ast.parse(arena, contents, .zig);
 
-    var map: std.StringArrayHashMapUnmanaged(u64) = .{};
+    var arch_nodes: std.StringArrayHashMapUnmanaged(std.zig.Ast.Node.Index) = .{};
+    {
+        const root = ast.containerDeclRoot();
+        const node_tags = ast.nodes.items(.tag);
+        for (root.ast.members) |member_node| {
+            switch (node_tags[member_node]) {
+                .global_var_decl, .local_var_decl, .simple_var_decl, .aligned_var_decl => {
+                    const full = ast.fullVarDecl(member_node).?;
+                    const name_token = full.ast.mut_token + 1;
+                    const ident_name_raw = ast.tokenSlice(name_token);
+                    std.debug.print("found arch '{s}'\n", .{ident_name_raw});
+                    try arch_nodes.put(arena, ident_name_raw, full.ast.init_node);
+                },
+                else => fatal("found non var decl", .{}),
+            }
+        }
+    }
 
-    const root = ast.containerDeclRoot();
+    var arch_map: std.StringArrayHashMapUnmanaged([]const u8) = .{};
+
+    for (arch_nodes.keys(), arch_nodes.values()) |arch, node| {
+        try oneArch(arena, ast, &arch_map, arch, node);
+    }
+
+    var bw = std.io.bufferedWriter(std.io.getStdOut().writer());
+    const w = bw.writer();
+
+    for (arch_map.keys(), arch_map.values()) |k, v| {
+        try w.print("{s} => {s},\n", .{ v, k });
+    }
+
+    try bw.flush();
+}
+
+fn oneArch(
+    arena: Allocator,
+    ast: std.zig.Ast,
+    arch_map: *std.StringArrayHashMapUnmanaged([]const u8),
+    arch_name: []const u8,
+    node: std.zig.Ast.Node.Index,
+) !void {
+    var map: std.StringArrayHashMapUnmanaged(u64) = .{};
+    var node_buf: [2]std.zig.Ast.Node.Index = undefined;
+    const namespace = ast.fullContainerDecl(&node_buf, node).?;
     const node_tags = ast.nodes.items(.tag);
     //const node_datas = ast.nodes.items(.data);
     const main_tokens = ast.nodes.items(.main_token);
-    for (root.ast.members) |member_node| {
+    for (namespace.ast.members) |member_node| {
         switch (node_tags[member_node]) {
             .global_var_decl, .local_var_decl, .simple_var_decl, .aligned_var_decl => {
                 const full = ast.fullVarDecl(member_node).?;
@@ -67,8 +109,8 @@ pub fn main() !void {
     }
     if (any_bad) std.process.exit(1);
 
-    var bw = std.io.bufferedWriter(std.io.getStdOut().writer());
-    const w = bw.writer();
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    const w = buf.writer(arena);
 
     const nbits = 32;
     try w.print("packed struct (u{d}) {{\n", .{nbits});
@@ -87,7 +129,15 @@ pub fn main() !void {
     }
     try w.writeAll("}\n");
 
-    try bw.flush();
+    const result = try buf.toOwnedSlice(arena);
+    const gop = try arch_map.getOrPut(arena, result);
+    if (gop.found_existing) {
+        gop.value_ptr.* = try std.fmt.allocPrint(arena, "{s}, {s}", .{
+            gop.value_ptr.*, arch_name,
+        });
+    } else {
+        gop.value_ptr.* = try arena.dupe(u8, arch_name);
+    }
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
