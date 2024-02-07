@@ -127,16 +127,16 @@ fn oneArch(
     if (nbits > bit_offset) {
         try w.print("    _: u{d},\n", .{nbits - bit_offset});
     }
-    try w.writeAll("}\n");
+    try w.writeAll("}");
 
     const result = try buf.toOwnedSlice(arena);
     const gop = try arch_map.getOrPut(arena, result);
     if (gop.found_existing) {
-        gop.value_ptr.* = try std.fmt.allocPrint(arena, "{s}, {s}", .{
+        gop.value_ptr.* = try std.fmt.allocPrint(arena, "{s}, .{s}", .{
             gop.value_ptr.*, arch_name,
         });
     } else {
-        gop.value_ptr.* = try arena.dupe(u8, arch_name);
+        gop.value_ptr.* = try std.fmt.allocPrint(arena, ".{s}", .{arch_name});
     }
 }
 
