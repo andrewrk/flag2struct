@@ -111,7 +111,7 @@ fn oneArch(
     });
 
     for (map.keys(), map.values()) |k, v| {
-        if (@clz(v) + @ctz(v) != 63) {
+        if (@as(usize, @clz(v)) + @ctz(v) != 63) {
             std.debug.print("not a flag: {s} = {d}\n", .{ k, v });
             any_bad = true;
         }
