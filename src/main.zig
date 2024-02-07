@@ -128,7 +128,7 @@ fn oneArch(
         // emit padding until we get to this bit offset
         const next_off = @ctz(v);
         if (next_off > bit_offset) {
-            try w.print("    _: u{d} = 0,\n", .{next_off - bit_offset});
+            try w.print("    _{d}: u{d} = 0,\n", .{ bit_offset, next_off - bit_offset });
         }
         try w.print("    {s}: bool,\n", .{k});
         bit_offset = next_off + 1;
