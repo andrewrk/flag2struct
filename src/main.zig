@@ -63,11 +63,13 @@ fn oneArch(
     node: std.zig.Ast.Node.Index,
 ) !void {
     var map: std.StringArrayHashMapUnmanaged(u64) = .{};
+    var num2name: std.AutoArrayHashMapUnmanaged(u64, []const u8) = .{};
     var node_buf: [2]std.zig.Ast.Node.Index = undefined;
     const namespace = ast.fullContainerDecl(&node_buf, node).?;
     const node_tags = ast.nodes.items(.tag);
     //const node_datas = ast.nodes.items(.data);
     const main_tokens = ast.nodes.items(.main_token);
+    var any_bad = false;
     for (namespace.ast.members) |member_node| {
         switch (node_tags[member_node]) {
             .global_var_decl, .local_var_decl, .simple_var_decl, .aligned_var_decl => {
@@ -81,13 +83,21 @@ fn oneArch(
                 const n = switch (std.zig.parseNumberLiteral(bytes)) {
                     .int => |n| n,
                     else => {
-                        fatal("bad number literal", .{});
+                        fatal("{s}: bad number literal", .{arch_name});
                     },
                 };
                 try map.put(arena, ident_name_raw, n);
-                std.debug.print("found '{s}'=>{d}\n", .{ ident_name_raw, n });
+                const gop = try num2name.getOrPut(arena, n);
+                if (gop.found_existing) {
+                    std.debug.print("{s}: duplicate: '{s}' and '{s}' both map to {d}\n", .{
+                        arch_name, gop.value_ptr.*, ident_name_raw, n,
+                    });
+                    any_bad = true;
+                }
+                gop.value_ptr.* = ident_name_raw;
+                //std.debug.print("{s}: found '{s}'=>{d}\n", .{ arch_name, ident_name_raw, n });
             },
-            else => fatal("found non var decl", .{}),
+            else => fatal("{s}: found non var decl", .{arch_name}),
         }
     }
 
@@ -100,7 +110,6 @@ fn oneArch(
         .values = map.values(),
     });
 
-    var any_bad = false;
     for (map.keys(), map.values()) |k, v| {
         if (@clz(v) + @ctz(v) != 63) {
             std.debug.print("not a flag: {s} = {d}\n", .{ k, v });
