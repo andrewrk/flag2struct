@@ -8,7 +8,22 @@ pub fn main() !void {
     const arena = arena_instance.allocator();
 
     const args = try std.process.argsAlloc(arena);
-    const input_path = args[1];
+
+    var opt_input_path: ?[]const u8 = null;
+    var nbits: usize = 32;
+    for (args[1..]) |arg| {
+        if (std.mem.startsWith(u8, arg, "-b")) {
+            nbits = try std.fmt.parseInt(u16, arg["-b".len..], 10);
+        } else if (std.mem.startsWith(u8, arg, "-")) {
+            fatal("unrecognized arg: '{s}'", .{arg});
+        } else if (opt_input_path == null) {
+            opt_input_path = arg;
+        } else {
+            fatal("extra positional arg: '{s}'", .{arg});
+        }
+    }
+
+    const input_path = opt_input_path orelse fatal("missing input zig source file", .{});
 
     const contents = try std.fs.cwd().readFileAllocOptions(
         arena,
@@ -42,7 +57,7 @@ pub fn main() !void {
     var arch_map: std.StringArrayHashMapUnmanaged([]const u8) = .{};
 
     for (arch_nodes.keys(), arch_nodes.values()) |arch, node| {
-        try oneArch(arena, ast, &arch_map, arch, node);
+        try oneArch(arena, ast, &arch_map, arch, node, nbits);
     }
 
     var bw = std.io.bufferedWriter(std.io.getStdOut().writer());
@@ -61,6 +76,7 @@ fn oneArch(
     arch_map: *std.StringArrayHashMapUnmanaged([]const u8),
     arch_name: []const u8,
     node: std.zig.Ast.Node.Index,
+    nbits: usize,
 ) !void {
     var map: std.StringArrayHashMapUnmanaged(u64) = .{};
     var num2name: std.AutoArrayHashMapUnmanaged(u64, []const u8) = .{};
@@ -121,7 +137,6 @@ fn oneArch(
     var buf: std.ArrayListUnmanaged(u8) = .{};
     const w = buf.writer(arena);
 
-    const nbits = 32;
     try w.print("packed struct (u{d}) {{\n", .{nbits});
     var bit_offset: usize = 0;
     for (map.keys(), map.values()) |k, v| {
